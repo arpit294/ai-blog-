@@ -33,9 +33,9 @@ return [
     | Valid providers: 'ollama', 'groq'
     */
     'ai_providers' => [
-        'outline_generation' => 'ollama',
-        'section_content_generation' => 'groq',
-        'fact_extraction' => 'groq',
-        'seo_generation' => 'ollama',
+        'outline_generation' => env('LLM_PROVIDER', 'ollama'),
+        'section_content_generation' => env('LLM_PROVIDER', 'ollama'),
+        'fact_extraction' => env('LLM_PROVIDER', 'ollama'),
+        'seo_generation' => env('LLM_PROVIDER', 'ollama'),
     ],
 ];

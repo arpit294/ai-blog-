@@ -19,7 +19,7 @@ class GroqService implements LlmProvider
 
     public function generate(string $model, string $prompt, array $options = []): array
     {
-        if (empty($this->apiKey) || $this->apiKey === 'gsk_YOUR_API_KEY_HERE') {
+        if (empty($this->apiKey) || $this->apiKey === 'gsk_REPLACE_WITH_YOUR_KEY' || $this->apiKey === 'gsk_YOUR_API_KEY_HERE') {
             throw new AiGenerationException("Groq API key is missing or invalid. Please update your .env file.");
         }
 
@@ -53,6 +53,7 @@ class GroqService implements LlmProvider
                 ->post($this->baseUrl, $payload);
 
             if ($response->failed()) {
+                \Illuminate\Support\Facades\Log::error("LLM Provider failed. URL: {$this->baseUrl}, Key Prefix: " . substr($this->apiKey, 0, 5) . ", Model: {$model}");
                 throw new AiGenerationException("Groq API failed with status {$response->status()}: {$response->body()}");
             }
 

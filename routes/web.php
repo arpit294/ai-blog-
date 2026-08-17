@@ -17,6 +17,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::resource('articles', ArticleController::class);
     
     // Article Review Workflow
+    Route::post('/articles/create-with-ai', [ArticleController::class, 'createWithAi'])->name('articles.createWithAi');
+    Route::get('/articles/active-run-status', [ArticleController::class, 'activeRunStatus'])->name('articles.activeRunStatus');
     Route::patch('/articles/{article}/approve', [ArticleController::class, 'approve'])->name('articles.approve');
     Route::patch('/articles/{article}/reject', [ArticleController::class, 'reject'])->name('articles.reject');
     Route::patch('/articles/{article}/request-changes', [ArticleController::class, 'requestChanges'])->name('articles.requestChanges');

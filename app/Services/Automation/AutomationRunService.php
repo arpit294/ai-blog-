@@ -17,7 +17,7 @@ class AutomationRunService
         $this->scheduleCalculator = $scheduleCalculator;
     }
 
-    public function dispatchRun(AutomationProfile $profile): ?AutomationRun
+    public function dispatchRun(AutomationProfile $profile, ?string $customTopic = null): ?AutomationRun
     {
         $nextRunTime = $profile->next_run_at ? $profile->next_run_at->timestamp : now()->timestamp;
         $runKey = "run_profile_{$profile->id}_time_{$nextRunTime}";
@@ -30,7 +30,7 @@ class AutomationRunService
         }
 
         try {
-            return DB::transaction(function () use ($profile, $runKey) {
+            return DB::transaction(function () use ($profile, $runKey, $customTopic) {
                 $existingRun = AutomationRun::where('run_key', $runKey)->first();
 
                 if ($existingRun) {
@@ -38,11 +38,17 @@ class AutomationRunService
                     return null; 
                 }
 
+                $metadata = [];
+                if ($customTopic) {
+                    $metadata['custom_topic'] = $customTopic;
+                }
+
                 $run = AutomationRun::create([
                     'automation_profile_id' => $profile->id,
                     'status' => 'queued',
                     'current_stage' => 'scheduler',
                     'run_key' => $runKey,
+                    'metadata' => $metadata,
                 ]);
 
                 $this->updateProfileTimestamps($profile);

@@ -58,6 +58,43 @@ class ArticleController extends Controller
 
     // --- Human Review Workflow Actions ---
 
+    public function createWithAi(\Illuminate\Http\Request $request)
+    {
+        $profile = \App\Models\AutomationProfile::where('status', 'active')->first();
+
+        if (!$profile) {
+            return back()->with('error', 'No active automation profile found. Please set one up first.');
+        }
+
+        $customTopic = $request->input('custom_topic');
+
+        $runService = app(\App\Services\Automation\AutomationRunService::class);
+        $run = $runService->dispatchRun($profile, $customTopic);
+
+        if ($run) {
+            return back()->with('success', 'AI Generation started! An article will be created shortly.');
+        }
+
+        return back()->with('error', 'AI Generation is already running or queued for this profile.');
+    }
+
+    public function activeRunStatus()
+    {
+        $run = \App\Models\AutomationRun::whereIn('status', ['running', 'queued'])
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (!$run) {
+            return response()->json(['active' => false]);
+        }
+
+        return response()->json([
+            'active' => true,
+            'stage' => str_replace('_', ' ', \Illuminate\Support\Str::title($run->current_stage)),
+            'status' => $run->status,
+        ]);
+    }
+
     public function approve(Article $article)
     {
         $profile = $article->profile;

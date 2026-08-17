@@ -4,9 +4,19 @@
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Articles') }}
             </h2>
-            <a href="{{ route('articles.create') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                Create Article
-            </a>
+            <div class="flex space-x-4">
+                <form action="{{ route('articles.createWithAi') }}" method="POST" class="flex space-x-2">
+                    @csrf
+                    <input type="text" name="custom_topic" placeholder="Optional Custom Topic..." class="rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 text-sm w-64" />
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded flex items-center whitespace-nowrap">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Create Article with AI
+                    </button>
+                </form>
+                <a href="{{ route('articles.create') }}" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Create Article
+                </a>
+            </div>
         </div>
     </x-slot>
 
@@ -18,6 +28,53 @@
                         <span class="block sm:inline">{{ session('success') }}</span>
                     </div>
                 @endif
+
+                <!-- AI Generation Progress Tracker -->
+                <div id="ai-progress-tracker" class="mb-6 bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex items-center hidden">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <div>
+                        <h4 class="text-indigo-800 font-semibold text-sm">AI Blog Generation in Progress...</h4>
+                        <p class="text-indigo-600 text-xs mt-1">Current Stage: <span id="ai-stage-text" class="font-bold text-indigo-700">Checking status...</span></p>
+                    </div>
+                </div>
+
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const tracker = document.getElementById('ai-progress-tracker');
+                        const stageText = document.getElementById('ai-stage-text');
+                        let wasActive = false;
+
+                        function checkAiStatus() {
+                            fetch('{{ route('articles.activeRunStatus') }}')
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (wasActive && !data.active) {
+                                        // It finished, reload the page
+                                        window.location.reload();
+                                        return;
+                                    }
+
+                                    wasActive = data.active;
+                                    
+                                    if (data.active) {
+                                        tracker.classList.remove('hidden');
+                                        stageText.innerText = data.stage || 'Processing...';
+                                    } else {
+                                        tracker.classList.add('hidden');
+                                    }
+                                })
+                                .catch(err => console.error('Error fetching AI status:', err));
+                        }
+
+                        // Check immediately on load
+                        checkAiStatus();
+                        // Then check every 3 seconds
+                        setInterval(checkAiStatus, 3000);
+                    });
+                </script>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     @foreach($articles as $article)

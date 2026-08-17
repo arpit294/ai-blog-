@@ -53,16 +53,29 @@ class RunAutomationJob implements ShouldQueue
             // Phase 4: Topic Selection
             $stateService->moveToStage($run, 'topic_selection');
             
-            $reservedTopic = $this->selectUniqueTopic($run, $topicGenerator, $duplicateDetector);
-            
-            if (!$reservedTopic) {
-                \Illuminate\Support\Facades\Log::info("RunAutomationJob: Batch 1 failed, requesting Batch 2.");
+            $customTopicTitle = $run->metadata['custom_topic'] ?? null;
+            if ($customTopicTitle) {
+                \Illuminate\Support\Facades\Log::info("RunAutomationJob: Using custom topic for run {$run->id}: {$customTopicTitle}");
+                $reservedTopic = \App\Models\BlogTopic::create([
+                    'automation_id' => $run->profile->id,
+                    'title' => $customTopicTitle,
+                    'normalized_title' => \App\Services\Automation\TopicGenerator::normalizeTitle($customTopicTitle),
+                    'summary' => 'Custom topic provided manually by user.',
+                    'status' => 'reserved',
+                    'source_run_id' => $run->id,
+                ]);
+            } else {
                 $reservedTopic = $this->selectUniqueTopic($run, $topicGenerator, $duplicateDetector);
                 
                 if (!$reservedTopic) {
-                    \Illuminate\Support\Facades\Log::warning("RunAutomationJob: No unique topic found after 2 batches.");
-                    $stateService->markSkipped($run, 'no_topic');
-                    return;
+                    \Illuminate\Support\Facades\Log::info("RunAutomationJob: Batch 1 failed, requesting Batch 2.");
+                    $reservedTopic = $this->selectUniqueTopic($run, $topicGenerator, $duplicateDetector);
+                    
+                    if (!$reservedTopic) {
+                        \Illuminate\Support\Facades\Log::warning("RunAutomationJob: No unique topic found after 2 batches.");
+                        $stateService->markSkipped($run, 'no_topic');
+                        return;
+                    }
                 }
             }
 
