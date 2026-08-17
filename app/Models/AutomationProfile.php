@@ -27,6 +27,9 @@ class AutomationProfile extends Model
         'reserve_quota_on_approval',
         'generate_seo',
         'generate_image',
+        'image_style',
+        'image_aspect_ratio',
+        'image_lora',
         'duplicate_mode',
         'duplicate_threshold',
         'semantic_duplicate_threshold',
@@ -39,6 +42,7 @@ class AutomationProfile extends Model
     protected $casts = [
         'generate_seo' => 'boolean',
         'generate_image' => 'boolean',
+        'competitor_urls' => 'array',
         'duplicate_threshold' => 'float',
         'last_run_at' => 'datetime',
         'next_run_at' => 'datetime',

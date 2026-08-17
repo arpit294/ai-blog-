@@ -27,8 +27,14 @@ class GenerateArticle implements ShouldQueue
         $this->topicId = $topicId;
     }
 
-    public function handle(ContentGenerator $contentGenerator, AutomationRunStateService $stateService)
+    public function handle(ContentGenerator $contentGenerator, AutomationRunStateService $stateService, \App\Services\AI\AiHealthCheck $healthCheck)
     {
+        if (!$healthCheck->isHealthy()) {
+            \Illuminate\Support\Facades\Log::warning("GenerateArticle: AI Providers unhealthy. Releasing job with backoff. Run: {$this->runId}");
+            $this->release(60 * $this->attempts()); // Exponential backoff based on attempts
+            return;
+        }
+
         $run = AutomationRun::find($this->runId);
         $topic = BlogTopic::find($this->topicId);
 

@@ -25,10 +25,15 @@ class ContentGenerationTest extends TestCase
     protected $profile;
     protected $topic;
     protected $run;
+    protected $mockLlm;
 
     protected function setUp(): void
     {
         parent::setUp();
+        
+        $this->app->bind(\App\Services\AI\GroqService::class, function () {
+            return new \App\Services\AI\GroqService('fake-key');
+        });
 
         $this->user = User::factory()->create();
         
@@ -79,6 +84,12 @@ class ContentGenerationTest extends TestCase
     {
         $mockLlm = $this->createMock(LlmProvider::class);
         $this->app->instance(LlmProvider::class, $mockLlm);
+        $this->app->instance(\App\Services\AI\GroqService::class, $mockLlm);
+        $this->app->instance(\App\Services\AI\OllamaService::class, $mockLlm);
+        
+        $mockResearch = $this->createMock(\App\Services\Automation\ResearchService::class);
+        $mockResearch->method('research')->willReturn([]);
+        $this->app->instance(\App\Services\Automation\ResearchService::class, $mockResearch);
 
         $mockLlm->expects($this->exactly(6))
                 ->method('generate')
@@ -86,15 +97,15 @@ class ContentGenerationTest extends TestCase
                     ['text' => '{"brief": "test brief"}'], // brief
                     ['text' => '{"headings": ["H1"]}'], // outline
                     ['text' => '{"content": "short"}'], // section
-                    ['text' => json_encode(['title' => 'Test', 'slug' => 'test', 'sections' => [['heading' => 'H1', 'content' => 'short']]])], // assembly
-                    ['text' => json_encode(['title' => 'Test', 'slug' => 'test', 'sections' => [['heading' => 'H1', 'content' => 'short']]])], // consistency
+                    ['text' => '{"introduction": "intro"}'], // intro
+                    ['text' => '{"conclusion": "conc"}'], // conclusion
                     ['text' => '{"content": "this is a much longer content block with more than ten words total"}'] // regenerate section
                 );
 
         $generator = app(ContentGenerator::class);
         $article = $generator->generate($this->profile, $this->topic, $this->run->id);
 
-        $this->assertEquals('Test', $article['title']);
+        $this->assertEquals('Test Topic', $article['title']);
         $this->assertCount(1, $article['sections']);
         $this->assertEquals('this is a much longer content block with more than ten words total', $article['sections'][0]['content']);
     }
@@ -103,6 +114,12 @@ class ContentGenerationTest extends TestCase
     {
         $mockLlm = $this->createMock(LlmProvider::class);
         $this->app->instance(LlmProvider::class, $mockLlm);
+        $this->app->instance(\App\Services\AI\GroqService::class, $mockLlm);
+        $this->app->instance(\App\Services\AI\OllamaService::class, $mockLlm);
+
+        $mockResearch = $this->createMock(\App\Services\Automation\ResearchService::class);
+        $mockResearch->method('research')->willReturn([]);
+        $this->app->instance(\App\Services\Automation\ResearchService::class, $mockResearch);
 
         // Turn off min_words to avoid extra regenerate call
         $this->profile->update(['min_words' => 0]);
@@ -114,14 +131,14 @@ class ContentGenerationTest extends TestCase
                     ['text' => '{"brief": "test brief"}'], // brief retry success
                     ['text' => '{"headings": ["H1"]}'], // outline
                     ['text' => '{"content": "short"}'], // section
-                    ['text' => json_encode(['title' => 'Test', 'slug' => 'test', 'sections' => [['heading' => 'H1', 'content' => 'short']]])], // assembly
-                    ['text' => json_encode(['title' => 'Test', 'slug' => 'test', 'sections' => [['heading' => 'H1', 'content' => 'short']]])] // consistency
+                    ['text' => '{"introduction": "intro"}'], // intro
+                    ['text' => '{"conclusion": "conc"}'] // conclusion
                 );
 
         $generator = app(ContentGenerator::class);
         $article = $generator->generate($this->profile, $this->topic, $this->run->id);
 
-        $this->assertEquals('Test', $article['title']);
+        $this->assertEquals('Test Topic', $article['title']);
     }
 
     public function test_generate_article_job_persists_article()
@@ -138,7 +155,11 @@ class ContentGenerationTest extends TestCase
         ]);
 
         $job = new GenerateArticle($this->run->id, $this->topic->id);
-        $job->handle($mockGenerator, app(AutomationRunStateService::class));
+        
+        $mockHealthCheck = $this->createMock(\App\Services\AI\AiHealthCheck::class);
+        $mockHealthCheck->method('isHealthy')->willReturn(true);
+        
+        $job->handle($mockGenerator, app(AutomationRunStateService::class), $mockHealthCheck);
 
         $this->assertDatabaseHas('articles', [
             'topic_id' => $this->topic->id,

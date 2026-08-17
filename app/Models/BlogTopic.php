@@ -14,13 +14,19 @@ class BlogTopic extends Model
         'category',
         'intent',
         'primary_keyword',
+        'target_keyword',
+        'estimated_search_volume',
         'status',
         'rejection_reason',
         'embedding_ref',
         'source_run_id',
+        'published_article_id',
+        'semantic_embedding',
+        'is_duplicate',
         'matched_record_type',
         'matched_record_id',
         'similarity_score',
+        'duplicate_flagged_at',
     ];
 
     public function embedding()

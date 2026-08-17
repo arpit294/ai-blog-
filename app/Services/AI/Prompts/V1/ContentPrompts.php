@@ -46,15 +46,36 @@ class ContentPrompts
         if ($stage === 'section') {
             $section = $extraContext['section'] ?? '';
             $outline = $extraContext['outline'] ?? '';
-            return "Task: Write comprehensive, high-quality content for the specific section: '{$section}'. Consider the full outline context: {$outline}. Output JSON format: { \"content\": \"string with HTML/markdown\" }";
+            $facts = $extraContext['facts'] ?? [];
+            
+            $prompt = "Task: Write comprehensive, high-quality content for the specific section: '{$section}'. Consider the full outline context: {$outline}.\n";
+            
+            if (!empty($facts)) {
+                $factsList = implode("\n- ", $facts);
+                $prompt .= "CRITICAL INSTRUCTION: Use the following verified research facts to ground your content. Do not copy these facts verbatim; integrate them naturally into your writing in your own words:\n- {$factsList}\n\n";
+            }
+            
+            $prompt .= "Output JSON format: { \"content\": \"string with HTML/markdown\" }";
+            return $prompt;
         }
-        if ($stage === 'assembly') {
-            $sections = json_encode($extraContext['sections'] ?? []);
-            return "Task: Assemble the final structured article using the provided sections: {$sections}. You must output exactly the JSON structure requested. Output JSON format: { \"title\": \"string\", \"slug\": \"string (kebab-case)\", \"excerpt\": \"string (meta description)\", \"introduction\": \"string (HTML)\", \"sections\": [ { \"heading\": \"string\", \"content\": \"string (HTML)\" } ], \"conclusion\": \"string (HTML)\", \"faq\": [ { \"question\": \"string\", \"answer\": \"string (HTML)\" } ] }";
+        if ($stage === 'introduction') {
+            $brief = $extraContext['brief'] ?? '';
+            $outline = json_encode($extraContext['outline'] ?? []);
+            $facts = $extraContext['facts'] ?? [];
+
+            $prompt = "Task: Write a compelling, engaging introduction for the article. Set the hook and outline what the reader will learn. Consider the brief: {$brief} and the full outline: {$outline}.\n";
+            
+            if (!empty($facts)) {
+                $factsList = implode("\n- ", $facts);
+                $prompt .= "Use these verified facts if applicable: \n- {$factsList}\n\n";
+            }
+            
+            $prompt .= "Output JSON format: { \"introduction\": \"string (HTML)\" }";
+            return $prompt;
         }
-        if ($stage === 'consistency') {
-            $article = json_encode($extraContext['article'] ?? []);
-            return "Task: Review the assembled article for consistency, flow, and completeness: {$article}. Fix any disjointed transitions. Output JSON format exactly as before: { \"title\": \"...\", \"slug\": \"...\", \"excerpt\": \"...\", \"introduction\": \"...\", \"sections\": [...], \"conclusion\": \"...\", \"faq\": [...] }";
+        if ($stage === 'conclusion') {
+            $outline = json_encode($extraContext['outline'] ?? []);
+            return "Task: Write a strong, summarizing conclusion for the article based on the outline: {$outline}. Provide final takeaways. Output JSON format: { \"conclusion\": \"string (HTML)\" }";
         }
         if ($stage === 'regenerate_section') {
             $section = $extraContext['section'] ?? '';
@@ -70,7 +91,17 @@ class ContentPrompts
                  . "Output JSON format: { \"seo_title\": \"string\", \"meta_description\": \"string\", \"focus_keyword\": \"string\", \"secondary_keywords\": [\"string\"], \"canonical_url\": \"string\", \"og_title\": \"string\", \"og_description\": \"string\", \"faq_schema\": {}, \"article_schema\": {}, \"internal_link_suggestions\": [ { \"anchor_text\": \"string\", \"url\": \"string\" } ] }";
         }
         if ($stage === 'image_prompt') {
-            return "Task: Create a visual prompt for an AI image generator (like Stable Diffusion or Midjourney) to create a featured image for this blog article. Keep it concise, descriptive, and focused on visual elements, lighting, and style. Output JSON format: { \"prompt\": \"string\" }";
+            $style = $extraContext['profile']['image_style'] ?? 'Photorealistic Editorial';
+            $topic = $extraContext['topic']['title'] ?? '';
+            
+            $prompt = "Task: Create a visual prompt for an AI image generator (like Stable Diffusion or Midjourney) to create a featured image for this blog article.\n\n";
+            $prompt .= "Article Topic: {$topic}\n";
+            $prompt .= "Required Style/Aesthetic: {$style}\n\n";
+            $prompt .= "CRITICAL CONSTRAINTS:\n";
+            $prompt .= "1. Focus heavily on visual elements, lighting, lens details, and aesthetic quality.\n";
+            $prompt .= "2. ABSOLUTELY NO TEXT, letters, words, logos, or watermarks should appear in the image.\n\n";
+            $prompt .= "Output JSON format: { \"prompt\": \"string\" }";
+            return $prompt;
         }
         if ($stage === 'image_alt_text') {
             $imagePrompt = $extraContext['image_prompt'] ?? '';

@@ -2,128 +2,68 @@
 
 namespace App\Jobs;
 
+use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Log;
-use App\Models\AutomationRun;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use App\Models\Article;
-use App\Models\ArticleImage;
-use App\Services\Automation\AutomationRunStateService;
-use App\Services\Automation\ImageGenerator;
+use App\Services\AI\ImageProvider;
+use App\Services\AI\ImageRequest;
+use App\Services\AI\PromptService;
+use App\Services\AI\LlmProvider;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class GenerateImage implements ShouldQueue
 {
-    use Queueable;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public $article;
     public $tries = 3;
+    public $timeout = 180;
 
-    protected int $runId;
-    protected int $articleId;
-
-    public function __construct(int $runId, int $articleId)
+    public function __construct(Article $article)
     {
-        $this->runId = $runId;
-        $this->articleId = $articleId;
-        $this->tries = config('automation.retry_budget', 3);
+        $this->article = $article;
     }
 
-    public function handle(AutomationRunStateService $stateService, ImageGenerator $imageGenerator)
+    public function handle(ImageProvider $imageProvider, LlmProvider $llm, PromptService $promptService)
     {
-        $run = AutomationRun::find($this->runId);
-        $article = Article::find($this->articleId);
-
-        if (!$run || !$article) {
-            return;
-        }
-
-        // Target state after image generation
-        $nextStage = 'review';
-        $publishMode = $run->profile->publish_mode;
-
-        if ($article->status !== 'needs_review') {
-            if ($publishMode === 'auto_publish') {
-                $nextStage = 'publishing';
-            } elseif ($publishMode === 'scheduled') {
-                $nextStage = 'scheduled';
-                $article->update([
-                    'status' => 'scheduled',
-                    'scheduled_at' => $article->scheduled_at ?? $run->profile->next_run_at ?? now()->addDay(),
-                ]);
-            } elseif ($publishMode === 'draft') {
-                $nextStage = 'draft';
-                $article->update(['status' => 'draft']);
-            }
-        }
-
-        if (!$run->profile->generate_image) {
-            Log::info("GenerateImage skipped for article {$article->id} (profile disabled).");
-            
-            if ($nextStage === 'publishing') {
-                \App\Jobs\PublishArticle::dispatch($run->id, $article->id);
-            } else {
-                $stateService->moveToStage($run, $nextStage);
-                if (in_array($nextStage, ['review', 'scheduled', 'draft'])) {
-                    $stateService->markCompleted($run);
-                }
-            }
-            return;
-        }
-
-        // Idempotency: skip if already generated
-        if (ArticleImage::where('article_id', $article->id)->where('status', 'generated')->exists()) {
-            Log::info("GenerateImage: Image already exists for article {$article->id}.");
-            if ($nextStage === 'publishing') {
-                \App\Jobs\PublishArticle::dispatch($run->id, $article->id);
-            } else {
-                $stateService->moveToStage($run, $nextStage);
-                if (in_array($nextStage, ['review', 'scheduled', 'draft'])) {
-                    $stateService->markCompleted($run);
-                }
-            }
-            return;
-        }
-
-        $stateService->moveToStage($run, 'image_generation');
-
         try {
-            $imageGenerator->generate($article);
+            // Check if article already has an image
+            if ($this->article->featured_image_path) {
+                return;
+            }
+
+            // Generate the image prompt using LLM
+            $promptContext = $promptService->buildPrompt('image_prompt', $this->article->profile, $this->article->topic, [
+                'profile' => $this->article->profile->toArray(),
+            ]);
+            $response = $llm->generate(config('services.llm.model'), $promptContext, ['format' => 'json']);
             
-            if ($nextStage === 'publishing') {
-                \App\Jobs\PublishArticle::dispatch($run->id, $article->id);
-            } else {
-                $stateService->moveToStage($run, $nextStage);
-                if (in_array($nextStage, ['review', 'scheduled', 'draft'])) {
-                    $stateService->markCompleted($run);
-                }
-            }
+            $data = json_decode($response['text'], true);
+            $imagePromptStr = $data['prompt'] ?? 'A professional blog featured image related to ' . $this->article->title;
+
+            // Request image from fal.ai
+            $aspectRatio = $this->article->profile->image_aspect_ratio ?? '16:9';
+            $lora = $this->article->profile->image_lora ?? null;
+            $imageRequest = new ImageRequest($imagePromptStr, 1024, 768, $aspectRatio, $lora);
+            $imageResult = $imageProvider->generate($imageRequest);
+
+            // Store image
+            $filename = 'articles/' . $this->article->id . '_' . $imageResult->id . '.jpg';
+            Storage::disk('public')->put($filename, $imageResult->rawBytes);
+
+            // Update article
+            $this->article->update([
+                'featured_image_path' => 'storage/' . $filename
+            ]);
+
         } catch (\Exception $e) {
-            Log::error("GenerateImage failed for article {$article->id}: " . $e->getMessage());
-
-            if ($this->attempts() >= $this->tries) {
-                // Non-blocking failure pattern: record failure but continue
-                Log::warning("GenerateImage: Retry budget exhausted for article {$article->id}. Continuing without image.");
-                
-                ArticleImage::updateOrCreate(
-                    ['article_id' => $article->id],
-                    [
-                        'prompt' => 'Failed to generate',
-                        'provider' => 'Unknown',
-                        'status' => 'failed',
-                    ]
-                );
-
-                if ($nextStage === 'publishing') {
-                    \App\Jobs\PublishArticle::dispatch($run->id, $article->id);
-                } else {
-                    $stateService->moveToStage($run, $nextStage);
-                    if ($nextStage === 'review') {
-                        $stateService->markCompleted($run);
-                    }
-                }
-            } else {
-                // Rethrow to trigger a queue retry
-                throw $e;
-            }
+            // Log the error but DO NOT throw. Image failure must never block the article.
+            Log::error("GenerateImage job failed for article {$this->article->id}: " . $e->getMessage());
+            // Proceed without image
         }
     }
 }

@@ -23,5 +23,19 @@ return [
         'readability' => 0.15,
         'uniqueness' => 0.15,
         'technical_validity' => 0.15,
-    ]
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | AI Provider Tiering
+    |--------------------------------------------------------------------------
+    | Mapping of generation stage to the preferred LLM provider.
+    | Valid providers: 'ollama', 'groq'
+    */
+    'ai_providers' => [
+        'outline_generation' => 'ollama',
+        'section_content_generation' => 'groq',
+        'fact_extraction' => 'groq',
+        'seo_generation' => 'ollama',
+    ],
 ];

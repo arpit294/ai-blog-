@@ -150,6 +150,13 @@ class DuplicateDetector
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning("Skipping semantic check, embedding failed: " . $e->getMessage());
+            
+            if ($profile->duplicate_mode === 'strict') {
+                return [
+                    'decision' => 'review_required',
+                    'reason' => 'semantic_check_failed'
+                ];
+            }
         }
 
         // 4. Accept

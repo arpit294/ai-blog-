@@ -6,21 +6,26 @@ use App\Models\AutomationProfile;
 use App\Models\AutomationRun;
 use App\Models\BlogTopic;
 use App\Services\AI\LlmProvider;
+use App\Services\AI\SeoDataProvider;
 use Illuminate\Support\Facades\Log;
 
 class TopicGenerator
 {
     protected LlmProvider $llm;
+    protected SeoDataProvider $seoProvider;
+    protected CompetitorAnalyzer $competitorAnalyzer;
 
-    public function __construct(LlmProvider $llm)
+    public function __construct(LlmProvider $llm, SeoDataProvider $seoProvider, CompetitorAnalyzer $competitorAnalyzer)
     {
         $this->llm = $llm;
+        $this->seoProvider = $seoProvider;
+        $this->competitorAnalyzer = $competitorAnalyzer;
     }
 
     public function generate(AutomationProfile $profile, AutomationRun $run): array
     {
         $prompt = $this->buildPrompt($profile);
-        $model = env('OLLAMA_MODEL', 'llama3');
+        $model = config('services.llm.model', 'llama3:latest');
 
         $candidates = $this->fetchCandidates($model, $prompt);
 
@@ -39,6 +44,8 @@ class TopicGenerator
                 'category' => $candidateData['category'] ?? null,
                 'intent' => $candidateData['intent'] ?? null,
                 'primary_keyword' => $candidateData['primary_keyword'] ?? null,
+                'target_keyword' => $candidateData['target_keyword'] ?? null,
+                'estimated_search_volume' => $candidateData['estimated_search_volume'] ?? 0,
                 'status' => 'candidate',
                 'source_run_id' => $run->id,
             ]);
@@ -95,7 +102,33 @@ class TopicGenerator
             ->toArray();
 
         $prompt = "You are an expert content strategist and SEO specialist.\n";
-        $prompt .= "Generate 5 to 10 highly engaging blog topic candidates based on the following criteria:\n";
+        
+        // 1. Keyword Data Injection
+        $keywords = $this->seoProvider->fetchKeywords($profile->niche, []);
+        if (!empty($keywords)) {
+            $keywordList = implode(', ', array_map(function($k) { return $k['keyword'] . ' (Vol: ' . $k['search_volume'] . ')'; }, array_slice($keywords, 0, 20)));
+            $prompt .= "Here are real search keywords with volume data: [{$keywordList}].\n";
+            $prompt .= "Create topic candidates targeting these keywords specifically.\n";
+        } else {
+            $prompt .= "Generate 5 to 10 highly engaging blog topic candidates based on the following criteria:\n";
+            Log::info("SeoDataProvider fallback: no keywords fetched, using brainstorming mode.");
+        }
+
+        // 2. Competitor Content Gap Analysis
+        if (!empty($profile->competitor_urls)) {
+            $competitorTopics = [];
+            foreach ($profile->competitor_urls as $url) {
+                $sitemapUrls = $this->competitorAnalyzer->fetchSitemap($url);
+                $competitorTopics = array_merge($competitorTopics, $this->competitorAnalyzer->extractTopics($sitemapUrls));
+            }
+            if (!empty($competitorTopics)) {
+                $compList = implode("\n- ", array_slice($competitorTopics, 0, 20));
+                $prompt .= "\nHere are topics our competitors have already covered:\n- {$compList}\n";
+                $prompt .= "Generate candidates that cover genuine gaps or better angles they missed.\n";
+            }
+        }
+
+        $prompt .= "\nCriteria:\n";
         $prompt .= "- Niche: {$profile->niche}\n";
         $prompt .= "- Target Audience: {$profile->target_audience}\n";
         $prompt .= "- Tone: {$profile->tone}\n";
@@ -115,6 +148,8 @@ class TopicGenerator
         $prompt .= "- category (string)\n";
         $prompt .= "- intent (string, e.g., informational, transactional)\n";
         $prompt .= "- primary_keyword (string)\n";
+        $prompt .= "- target_keyword (string, the exact keyword from the list you targeted, or null)\n";
+        $prompt .= "- estimated_search_volume (integer, from the keyword list, or 0)\n";
 
         return $prompt;
     }

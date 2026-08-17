@@ -16,27 +16,22 @@ class SeoGenerator
 {
     protected LlmProvider $llm;
     protected PromptService $promptService;
+    protected InternalLinkingService $linkingService;
     protected string $modelName = 'qwen2.5'; // Using a default from previous phases
 
-    public function __construct(LlmProvider $llm, PromptService $promptService)
+    public function __construct(LlmProvider $llm, PromptService $promptService, InternalLinkingService $linkingService)
     {
         $this->llm = $llm;
         $this->promptService = $promptService;
+        $this->linkingService = $linkingService;
     }
 
     public function generate(AutomationProfile $profile, Article $article, int $runId): ArticleSeo
     {
         $topic = $article->topic;
 
-        // Fetch potential internal links
-        $publishedArticles = Article::where('automation_profile_id', $profile->id)
-            ->where('status', 'published')
-            ->where('id', '!=', $article->id)
-            ->select('id', 'title', 'slug')
-            ->limit(10)
-            ->get()
-            ->map(fn($a) => ['title' => $a->title, 'url' => url('/' . $a->slug)])
-            ->toArray();
+        // Fetch highly relevant internal links using semantic embeddings
+        $publishedArticles = $this->linkingService->getSuggestions($profile, $topic->title, $topic->summary, 5);
 
         $prompt = $this->promptService->buildPrompt('seo_generation', $profile, $topic, [
             'article' => [

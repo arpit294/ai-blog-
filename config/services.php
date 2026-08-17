@@ -35,4 +35,20 @@ return [
         ],
     ],
 
+    'llm' => [
+        'provider' => env('LLM_PROVIDER', 'ollama'), // 'ollama' or 'groq'
+        'model' => env('LLM_MODEL', 'llama3:latest'),
+        'groq' => [
+            'api_key' => env('GROQ_API_KEY'),
+        ],
+    ],
+
+    'fal' => [
+        'api_key' => env('FAL_KEY'),
+    ],
+
+    'xai' => [
+        'api_key' => env('XAI_API_KEY'),
+    ],
+
 ];

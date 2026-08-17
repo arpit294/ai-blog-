@@ -22,8 +22,14 @@ class GenerateSeo implements ShouldQueue
         $this->articleId = $articleId;
     }
 
-    public function handle(\App\Services\Automation\AutomationRunStateService $stateService, \App\Services\Automation\SeoGenerator $seoGenerator)
+    public function handle(\App\Services\Automation\AutomationRunStateService $stateService, \App\Services\Automation\SeoGenerator $seoGenerator, \App\Services\AI\AiHealthCheck $healthCheck)
     {
+        if (!$healthCheck->isHealthy()) {
+            \Illuminate\Support\Facades\Log::warning("GenerateSeo: AI Providers unhealthy. Releasing job with backoff. Run: {$this->runId}");
+            $this->release(60 * $this->attempts());
+            return;
+        }
+
         $run = AutomationRun::find($this->runId);
         $article = \App\Models\Article::find($this->articleId);
 
